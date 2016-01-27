@@ -75,12 +75,89 @@
 
   )
 
-(defn attractor [initState rule]
+(defn isFixed [initState rule]
   (cond
     (= initState (nextState rule initState)) true
     :else false
     )
   )
+
+
+;; part of a periodic rule
+(defn isPeriodic [initState state rule memory cnt]
+
+  ;;(println initState state memory)
+  (cond
+    (>= cnt (Math/pow 2 (count initState))) nil
+    (= (count (distinct memory)) (count memory) ) ;;initially true
+    (isPeriodic
+     initState
+     (nextState rule state)
+     rule
+     (concat memory (list state))
+     (+ cnt 1))
+    (< (count (distinct memory)) (count memory))
+    (cond
+      (= (first memory) (last memory)) (- (count memory) 1)
+      :else nil
+      )
+    :else false
+    )
+  )
+
+
+;; takes a memory of an init state, and gives the transient number of
+;; that state
+
+(defn findTransientNumber [memory ind]
+
+  (cond
+    (>= ind (count memory)) nil ;;no period after transient
+    (= (nth memory ind) (last memory)) ind
+    :else (findTransientNumber memory (+ ind 1))
+    )
+
+  )
+
+;; part of a periodic rule
+(defn isTransient [initState state rule memory cnt]
+
+  ;;(println initState state memory)
+  (cond
+    (>= cnt (Math/pow 2 (count initState))) nil
+    (= (count (distinct memory)) (count memory) ) ;;initially true
+    (isTransient
+     initState
+     (nextState rule state)
+     rule
+     (concat memory (list state))
+     (+ cnt 1))
+    (< (count (distinct memory)) (count memory))
+    (cond
+      (= (first memory) (last memory)) nil ;;not a transient
+      :else (findTransientNumber memory 0)
+      )
+    :else false
+    )
+  )
+
+;; part of a sequence
+(defn partSequence [initState state rule memory cnt]
+
+  (cond
+    (>= cnt (Math/pow 2 (count initState))) memory
+    (= (count (distinct memory)) (count memory) ) ;;initially true
+    (partSequence
+     initState
+     (nextState rule state)
+     rule
+     (concat memory (list state))
+     (+ cnt 1))
+    (< (count (distinct memory)) (count memory)) memory ;;cycle
+    :else nil
+    )
+  )
+
 
 ;; What i want to do, is to have a list all possible configurations of
 ;; the cellular automata and as I go through each configuration, I
@@ -108,6 +185,23 @@
      )
 
     )
+  )
+
+;; states all posible n-cell states
+;; CA rule
+(defn getAttractors [states rule]
+
+  (filter identity
+          (map
+           (fn [state]
+             (cond
+               (= (isFixed state rule) true) state
+               :else nil
+               )
+             )
+           states)
+          )
+
   )
 
 ;; finds all the basins of attractors  CA rule
@@ -155,8 +249,66 @@
                             )
         ]
     (println localBasins)
+    localBasins
     )
   )
+
+;;either gets a trajectory to a fixed point, itself or a member of the class
+(defn CAsequence [state rule fixedPoint memory cnt]
+
+  (cond
+    (> cnt (Math/pow 2 (float (count state)))) nil ;;never evolves to FP
+    (= state fixedPoint) (concat memory (list state))
+    :else (CAsequence
+           (nextState rule state)
+           rule
+           fixedPoint
+           (concat memory (list state))
+           (+ cnt 1)
+           )
+    )
+
+  )
+
+
+;;either gets a trajectory to a fixed point, itself or a member of the class
+(defn CAseqDynamic [initState state rule memory cnt]
+
+  ;;(println state )
+  (cond
+    (> cnt (Math/pow 2 (count state))) nil ;;never evolves
+    ;;to FP
+    (= (isFixed state rule) true) (concat memory (list state)) ;;evolves to a fixed point, and is a part of that sequence
+    (< (count (distinct memory)) (count memory) ) ;;presence of a
+    ;; ;;periodic behavior, get the smallest cycle from initial state and
+    ;; ;;name its transients
+    memory
+    :else (CAseqDynamic
+           initState
+           (nextState rule state)
+           rule
+           (concat memory (list state))
+           (+ cnt 1)
+           )
+    )
+
+  )
+
+
+
+
+;; take a rule, n-cell states, and finds out the trajectory of each of
+;; those states to an attractor
+;; (defn findSequencesToAttractor [ rule ]
+
+;;   (let [
+
+;;         (attractor )
+;;         ]
+;;     )
+
+;;   )
+
 
 
 (defn countOnes [state]
@@ -198,6 +350,8 @@
 ;;     )
 ;;   )
 
+;; belongs to a class if it matches one of the members in the class
+;; within n steps
 (defn belongsToClass [state cl]
   (let [
         cnt (count state)
@@ -218,6 +372,18 @@
       (empty? shiftCheck) nil
       :else true
       )
+    )
+  )
+
+;;simplest version just does a check wkithout rotation
+(defn belongsToAttractor [state basins]
+
+  (cond
+    (or
+     (not (empty (get basins state)))
+     (not (nil? (get basins state)))
+     ) true
+    :else nil
     )
   )
 
@@ -246,11 +412,11 @@
         ]
     (cond
       (empty? classId) (do
-                         (println "new class created")
+                         ;;(println "new class created")
                          (concat classList (list state))
                          )
       :else (do
-              (println "belongs to old class")
+              ;;(println "belongs to old class")
               classList
               )
       )
@@ -258,13 +424,161 @@
 
   )
 
-;;generates classes based on operational closure of CA
+;;generates shift invariant classes based on operational closure of CA
 (defn genClasses [states classes]
 
   (cond
     (empty? states) classes
     :else (genClasses (rest states) (checkExistingClass (first states) classes))
     )
+  )
+
+
+;; find what are the attractors and what what class do they fall into)
+;; This is done by searching if a class element is a fixed point
+
+(defn attrFixedPoints [n rule]
+  (let [
+        classes (genClasses (comb/selections [0 1] n) '() )
+        basins (getBasins (caRule rule) (comb/selections [0 1] n) {} 0)
+        ]
+    (println classes)
+    (println basins)
+    (map
+     ;;check if a state or any other equivalent state is a fixed point
+     ;;in a basin
+     (fn [c]
+       (cond
+         (= (belongsToAttractor c basins) true) (println "a")
+         :else nil
+         )
+       )
+     classes)
+    )
 
   )
-;;awesome, now it is upto you to say where the perturbations fall
+
+
+;; to find the sequence from a given state to a fixed point
+
+;; state -> an n cell CA state
+;; rule -> ca rule
+;; args -> whether wrap around is needed or not
+(defn findSequence [state rule & args]
+
+  (let [
+        n (count state)
+        classes (genClasses (comb/selections [0 1] n))
+        basins (getBasins (caRule rule) (comb/selections [0 1] n) {} 0)
+        ]
+    )
+  )
+
+(defn expandClassGen [states]
+
+  (let [
+        classes (genClasses states '())
+        ]
+    (map
+     (fn [c]
+       (let [
+             classList '()
+             ]
+         (filter identity
+                 (map
+                  (fn [s]
+                    (cond
+                      (= (belongsToClass s c) true) (concat classList s)
+                      :else nil
+                      )
+                    )
+                  states))
+         )
+       )
+     classes)
+    )
+  )
+
+;; returns the classes that it is member of
+(defn checkClassMember [state]
+
+  (let [
+        n (count state)
+        states (comb/selections [0 1] n)
+        classes (expandClassGen states)
+        ]
+    ;;(println classes)
+    (first (filter identity (map
+                      (fn [c]
+                        (cond
+                          (= (belongsToClass state (first c)) true) c
+                          :else nil
+                          )
+                        )
+                      classes)))
+    )
+  )
+
+
+
+;;get sequence takes a state as input and the outputs is the
+;;sequence that it belongs to.
+
+;; rule: 0000000
+;; input: 001
+;; output: (001 000)
+
+;; (defn getSeq [state rule]
+
+;;   (cond
+;;     (= (isFixed state rule) true)  (println "fixed") ;;no more points
+;;     ;;(= (isTransient state rule) true) (println "transient")  ;;it leads to another state
+;;     :else nil
+;;     )
+
+;;   )
+
+;; generates the table output form
+(defn characterizeState [state rule]
+
+  (let [
+        caClass (checkClassMember state)
+        seq (partSequence state state rule '() 0)
+        trNo (isTransient state state rule '() 0)
+        phNo (isPeriodic state state rule '() 0)
+        phase (cond
+                (= nil phNo) nil
+                :else phNo
+                )
+        transientNumber (cond
+                          (= nil trNo) nil
+                          :else trNo
+                          )
+        ]
+    {"state" state,
+     "Shift invariant class" caClass,
+     "Sequence" seq,
+     "Phase" phase,
+     "Transient" transientNumber}
+    )
+  )
+
+;; n -> number
+;; rule -> wolfram representation of rule
+;; output characterization of all states
+(defn tableGen [n rule]
+  (let [
+        states (comb/selections [0 1] n)
+        carule (caRule rule)
+        ]
+    (doall
+     (map
+      (fn [s]
+        (characterizeState s carule)
+        states)
+      )
+     )
+    )
+  )
+
+;;(tableGen 3 (caRule '(0 0 0 0 0 0 0 0)) )
