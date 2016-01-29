@@ -1,5 +1,6 @@
 (ns tableGenerator.core
   (:require [clojure.math.combinatorics :as comb])
+  :genclass
   )
 
 
@@ -325,8 +326,9 @@
        (characterizeState s carule filename)
        )
      states)
-
     )
   )
 
-;;(tableGen 3 (caRule '(0 0 0 0 0 0 0 0)) )
+(defn submain [n rule]
+  (tableGen n (map symbol (clojure.string/split rule #"")))
+  )

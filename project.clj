@@ -10,4 +10,5 @@
                  ]
 
   :plugins [[cider/cider-nrepl "0.11.0-SNAPSHOT"]]
+  :main ca-classes.core
   )
