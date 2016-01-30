@@ -532,15 +532,15 @@
         seqNo (findSequence state rule)
         ]
     ;;(println "writing")
-    (println           (str "|" (join state)
-                            "|" (join (map join caClass) ",")
-                            "|" (join (map join seq) "-->")
-                            "|" phase
-                            "|" transientNumber
-                            "|" transientNumber
-                            "|" (apply str classNo)
-                            "|" seqNo
-                            "|\n" ))
+    ;; (println           (str "|" (join state)
+    ;;                         "|" (join (map join caClass) ",")
+    ;;                         "|" (join (map join seq) "-->")
+    ;;                         "|" phase
+    ;;                         "|" transientNumber
+    ;;                         "|" transientNumber
+    ;;                         "|" (apply str classNo)
+    ;;                         "|" seqNo
+    ;;                         "|\n" ))
     (spit filename
           (str "|" (join state)
                "|" (join (map join caClass) ",")
@@ -575,12 +575,12 @@
 ;; output characterization of all states
 (defn tableGen [n rule]
   (let [
-        filename (str n "cellCARule" rule ".org")
-        states (comb/selections [0 1] (#(Integer/parseInt n)))
-        rule (getIntRep rule)
+        filename (str n "cellCARule.org")
+        states (comb/selections [0 1] n)
+        ;;rule (getIntRep rule)
         carule (caRule rule)
         ]
-    (spit filename "")
+    (spit filename "\n\n" :append true)
     (spit filename
           (str "#+TABLE: Characterization of a " n " cell CA with Rule " (join rule) "\n")
           :append true
@@ -588,18 +588,34 @@
     (spit filename "#+ATTR_LATEX: :align |c|c|c|c|c|\n" :append true)
     (spit filename "|state|Shift invariant class|Sequence|Phase|Transient|classNo|SeqNo|\n" :append true)
 
-    (println "writing to" filename)
+    (println "writing" rule " to " filename)
     (doall (map
          (fn [s]
            ;;(println "mapping" s)
            (characterizeState s carule filename)
            )
          states))
-    (println "done writing the file" filename)
+    (println "done writing" rule " to " filename)
     )
   )
 
-
-(defn -main [n rule]
+(defn nCellRule [n rule]
   (tableGen n rule)
+  )
+
+(defn -main [nCell nRule]
+
+  (let [
+        nC (#(Integer/parseInt nCell))
+        nR (#(Integer/parseInt nRule))
+        rules (comb/selections [0 1] nR)
+        ]
+    ;;for each rule, each cell generate tables
+    (doall
+     (map
+     (fn [r]
+       (nCellRule nC r)
+       )
+     rules))
+    )
   )
