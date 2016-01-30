@@ -603,12 +603,12 @@
   (tableGen n rule)
   )
 
-(defn -main [nCell nRule]
+(defn -main [nCell]
 
   (let [
         nC (#(Integer/parseInt nCell))
-        nR (#(Integer/parseInt nRule))
-        rules (comb/selections [0 1] nR)
+        ;;nR (#(Integer/parseInt nRule))
+        rules (comb/selections [0 1] 8)
         ]
     ;;for each rule, each cell generate tables
     (doall
