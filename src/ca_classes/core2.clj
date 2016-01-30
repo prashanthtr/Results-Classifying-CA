@@ -582,3 +582,123 @@
   )
 
 ;;(tableGen 3 (caRule '(0 0 0 0 0 0 0 0)) )
+
+
+;; extra modules
+
+;; checks if it is a part of the sequence as well as returns a longer
+;; subsequence if it is a part of that.
+
+(defn checkPartSequence [state rule sequences & args]
+
+  ;;(println "in check part seq" state)
+  (cond
+    (empty? sequences) (do
+                         ;;trivial case, build up a sequence
+                         (list (basins state rule '() 0))
+                         )
+    :else
+    (let [
+          ;;checks if state is fixed, is a part of bigger sequence, or
+          ;;is part of a sequence that is part of bigger sequence
+          partof  (map-indexed
+                   (fn [ind seq]
+                     (cond
+                       (= (isFixed state rule) true) (do
+                                                       ;;(println "fixed")
+                                                       (basins state rule '() 0)
+                                                       )
+                       (and
+                        (=  (longestSubseq (basins state rule '() 0) seq ) true)
+                        (>  (count (basins state rule '() 0))
+                            (count seq)
+                            )
+                        )
+                       (do
+                         ;;(println "found longer seq" state seq)
+                         (basins state rule '() 0) ;;longer seq
+                         )
+                       (.contains seq state) (do
+                                               ;;(println "part of longer sequence")
+                                               seq)
+                       ;;same seq
+                       :else nil ;;nothing
+                       )
+                     )
+                   sequences)
+          partofRefined (filter identity partof)
+          ]
+      ;;contains the current update sequence
+      ;;(println partof)
+      (cond
+        (empty? partofRefined) (do
+                          ;;(println "creating sequence")
+                          (concat
+                           sequences
+                           (basins state rule '() 0)
+                           )
+                          ;;create a new sequence wih state
+                          )
+        (= (count sequences) (count partofRefined)) (do
+                                               ;;(println "adding fixed point")
+                                       (concat
+                                        sequences
+                                        (distinct partofRefined)
+                                        )
+                                       )
+        :else (map
+               (fn [p s]
+                 (cond
+                   (= nil p) s
+                   (= p s) s
+                   :else p
+                   )
+                 )
+               partof sequences) ;;returns the sequence it is a part of
+        )
+      )
+    )
+  )
+
+ ;; (concat seq (list (first seq2)))
+
+;; a state is in the basin of the initial state when it gets to the
+;; initial state in a certain number of iterations,. The maximum
+;; numnber of iterations is 2^n.
+
+;;generates the sequences froom a state and rule
+
+(defn basins [state rule sequences cnt]
+
+  ;;(println cnt)
+  ;;(println initState prevState state)
+  (cond
+    (>= cnt (Math/pow 2 (count state))) '()  ;;avoid infinite
+    ;;recursion, this should only be the number of classes actually
+    (= (type (isPeriodic state state rule '() 0 'periodic))  clojure.lang.LazySeq)
+    (do
+      ;;(println "periodic")
+      (concat
+       sequences
+       (isPeriodic state state rule '() 0 'periodic))
+      )
+
+    (= (type (isTransient state state rule '() 0 'transient)) clojure.lang.LazySeq)
+    (concat
+     sequences
+     (isTransient state state rule '() 0 'transient)
+     )
+
+    ;; then its a periodic state
+    (isFixed state rule) (concat sequences (list state)) ;;no more reachable states
+    ;; then it is a fixed sate
+    :else
+    (basins
+     (nextState rule state) ; make the next state current state
+     rule
+     (concat sequences (list state)) ;;add transients to sequence
+     (inc cnt)
+     )
+
+    )
+  )

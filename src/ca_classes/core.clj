@@ -304,6 +304,214 @@
             )
   )
 
+
+;; we want to se if seq2 is contained in seq1
+(defn longestSubseq [seq1 seq2]
+  ;;(println seq1 seq2)
+  (cond
+    (or
+     (and (empty? seq2) (empty? seq1))
+     (and (empty? seq2) (not (empty? seq1)))
+     ) true
+    (and (empty? seq1) (not (empty? seq2))) nil
+    (= (first seq1) (first seq2))
+    (longestSubseq (rest seq1) (rest seq2) )
+    :else (longestSubseq (rest seq1) seq2)
+    )
+
+  )
+
+(defn replaceSequences [seq newSeq rule]
+
+  (cond
+    (empty? seq) (list newSeq)
+    :else   (let [
+                  needNewSeq (filter identity
+                                     (map
+                                      (fn [s]
+                                        (cond
+                                          (and
+                                           (> (count newSeq)  (count s))
+                                           (not (isFixed (first s) rule))
+                                           ;;because fixed points are
+                                           ;;always parts of
+                                           ;;converging sequences
+                                           (longestSubseq newSeq s)
+                                           )
+                                          newSeq
+                                          :else nil
+                                          )
+                                        )
+                                      seq))
+                  ]
+              (cond
+                (empty? needNewSeq) (concat seq (list newSeq)) ;;not
+                ;;in list
+                ;;in list but need a longer subseq
+                :else (map
+                       (fn [s]
+                         (cond
+                           (and
+                            (> (count newSeq)  (count s))
+                            (longestSubseq newSeq s)
+                            ) newSeq
+                           :else s
+                           )
+                         )
+                       seq)
+                )
+              )
+    )
+  )
+
+;; builds a new sequence
+;; or returns an existing sequence
+;; or creates a longer sequence
+;; or creates a new sequence and adds it
+
+(defn buildSequences [state rule sequences]
+
+  (cond
+
+    ;; if it is a fixed point
+    (isFixed state rule) (concat sequences (list (list state state)))
+    ;;periodic point
+    (isPeriodic state state rule '() 0)
+    (do
+      ;;(println "periodic")
+      (concat
+       sequences
+       (list (isPeriodic state state rule '() 0 'periodic))
+       ) ;;returns the period sequence
+
+      )
+
+    ;; ;;transient point
+    (isTransient state state rule '() 0)
+    ;;replaces only the transient sequences
+    (replaceSequences
+     sequences
+     (isTransient state state rule '() 0 'transient)
+     rule
+     )
+
+    ;; ;;replace with a longer sequence
+    ;; (do
+    ;;   ;;(println "transient")
+    ;;   (replaceSequences
+    ;;    sequences
+    ;;    (isTransient state state rule '() 0 'transient)
+    ;;    )
+    ;;   )
+
+    :else nil ;;there is no point like that
+    )
+
+  )
+
+;; need to check if output correct
+(defn sequenceNumbers [states rule sequences]
+
+  ;;(println (first states) sequences)
+  (cond
+    (= nil (first states)) sequences
+    :else (sequenceNumbers (rest states) rule
+                           (buildSequences (first states) rule sequences)
+                           )
+    ;;checkPartSequence
+                           ;; directly return the sequences
+                           ;; (concat
+                            ;;  sequences)
+
+    )
+
+  )
+
+(defn findSequence [state rule]
+
+  (let [
+        sequences (sequenceNumbers (comb/selections [0 1] (count state))
+                                   rule
+                                   '()
+                                   )
+        charcSeq (filter identity
+                         (map-indexed
+                          (fn [ind seq]
+                            (cond
+                              ;;distinguishing between transient and
+                              ;;fixed points, both occuring in many sequences
+                              (and
+                               (not (isFixed state rule))
+                               (.contains seq state))
+                              (str "S" ind)
+                              (and (isFixed state rule )
+                                   (= state (first seq)) ;;seq is
+                                   ;;twice the fixed point
+                                   )
+                              (str "S" ind)
+                              :else nil
+                              )
+                            )
+                          sequences))
+        ]
+    ;;(str "S" ind " " (reverse (into () seq)))
+    ;;(println charcSeq)
+    (cond
+      (empty? charcSeq) nil
+      (= (count charcSeq) 1) (first charcSeq)  ;; converging sequence
+      ;;(isFixed state rule) (first charcSeq)
+      :else (join charcSeq ",")
+      )
+    ;;(println sequences)
+
+    )
+  )
+
+(defn findClass [state]
+
+  (let [
+        n (count state)
+        classes (expandClassGen (comb/selections [0 1] n))
+        ]
+    (filter identity
+            (map-indexed
+             (fn [ind c]
+               (cond
+                 (.contains c state) (str "C" ind " ")
+                 :else nil
+                 )
+               )
+             classes)
+            )
+    )
+  )
+
+;;(reverse (into () state))
+
+(defn classToSeq [state rule]
+  (let [
+        classId (findClass state)
+        n (count state)
+        seqId (findSequence state rule)
+        ]
+    (list (first classId) " --> " seqId)
+    )
+  )
+
+;; (defn characterizeClassSequences [n rule]
+;;   (let [
+;;         states (comb/selections [0 1] n)
+;;         rule (caRule rule)
+;;         ]
+;;     ; for every state, get the class and the sequence it belongs to
+;;     (map
+;;      (fn [s]
+;;        (join (classToSeq s rule) " ")
+;;        )
+;;      states)
+;;     )
+;;   )
+
 ;; generates the table output form
 (defn characterizeState [state rule filename]
   ;;(println "characterizing")
@@ -320,19 +528,28 @@
                           (= nil trNo) "nil"
                           :else trNo
                           )
+        classNo (findClass state)
+        seqNo (findSequence state rule)
         ]
     ;;(println "writing")
     (println           (str "|" (join state)
                             "|" (join (map join caClass) ",")
                             "|" (join (map join seq) "-->")
                             "|" phase
-                            "|" transientNumber "|\n" ))
+                            "|" transientNumber
+                            "|" transientNumber
+                            "|" (apply str classNo)
+                            "|" seqNo
+                            "|\n" ))
     (spit filename
           (str "|" (join state)
                "|" (join (map join caClass) ",")
                "|" (join (map join seq) "-->")
                "|" phase
-               "|" transientNumber "|\n" )
+               "|" transientNumber
+               "|" (apply str classNo)
+               "|" seqNo
+               "\n" )
           :append true
           )
     true
@@ -369,7 +586,7 @@
           :append true
           )
     (spit filename "#+ATTR_LATEX: :align |c|c|c|c|c|\n" :append true)
-    (spit filename "|state|Shift invariant class|Sequence|Phase|Transient|\n" :append true)
+    (spit filename "|state|Shift invariant class|Sequence|Phase|Transient|classNo|SeqNo|\n" :append true)
 
     (println "writing to" filename)
     (doall (map
@@ -382,225 +599,7 @@
     )
   )
 
+
 (defn -main [n rule]
   (tableGen n rule)
-  )
-
-
-;; we want to se if seq2 is contained in seq1
-(defn longestSubseq [seq1 seq2]
-  ;;(println seq1 seq2)
-  (cond
-    (or
-     (and (empty? seq2) (empty? seq1))
-     (and (empty? seq2) (not (empty? seq1)))
-     ) true
-    (and (empty? seq1) (not (empty? seq2))) nil
-    (= (first seq1) (first seq2))
-    (longestSubseq (rest seq1) (rest seq2) )
-    :else (longestSubseq (rest seq1) seq2)
-    )
-
-  )
-
- ;; (concat seq (list (first seq2)))
-
-;; a state is in the basin of the initial state when it gets to the
-;; initial state in a certain number of iterations,. The maximum
-;; numnber of iterations is 2^n.
-
-;;generates the sequences froom a state and rule
-
-(defn basins [state rule sequences cnt]
-
-  ;;(println cnt)
-  ;;(println initState prevState state)
-  (cond
-    (>= cnt (Math/pow 2 (count state))) '()  ;;avoid infinite
-    ;;recursion, this should only be the number of classes actually
-    (= (type (isPeriodic state state rule '() 0 'periodic))  clojure.lang.LazySeq)
-    (do
-      ;;(println "periodic")
-      (concat
-       sequences
-       (isPeriodic state state rule '() 0 'periodic))
-      )
-
-    (= (type (isTransient state state rule '() 0 'transient)) clojure.lang.LazySeq)
-    (concat
-     sequences
-     (isTransient state state rule '() 0 'transient)
-     )
-
-    ;; then its a periodic state
-    (isFixed state rule) (concat sequences (list state)) ;;no more reachable states
-    ;; then it is a fixed sate
-    :else
-    (basins
-     (nextState rule state) ; make the next state current state
-     rule
-     (concat sequences (list state)) ;;add transients to sequence
-     (inc cnt)
-     )
-
-    )
-  )
-
-
-;; checks if it is a part of the sequence as well as returns a longer
-;; subsequence if it is a part of that.
-
-(defn checkPartSequence [state rule sequences & args]
-
-  ;;(println "in check part seq" state)
-  (cond
-    (empty? sequences) (do
-                         ;;trivial case, build up a sequence
-                         (list (basins state rule '() 0))
-                         )
-    :else
-    (let [
-          ;;checks if state is fixed, is a part of bigger sequence, or
-          ;;is part of a sequence that is part of bigger sequence
-          partof  (map-indexed
-                   (fn [ind seq]
-                     (cond
-                       (= (isFixed state rule) true) (do
-                                                       ;;(println "fixed")
-                                                       (basins state rule '() 0)
-                                                       )
-                       (and
-                        (=  (longestSubseq (basins state rule '() 0) seq ) true)
-                        (>  (count (basins state rule '() 0))
-                            (count seq)
-                            )
-                        )
-                       (do
-                         ;;(println "found longer seq" state seq)
-                         (basins state rule '() 0) ;;longer seq
-                         )
-                       (.contains seq state) (do
-                                               ;;(println "part of longer sequence")
-                                               seq)
-                       ;;same seq
-                       :else nil ;;nothing
-                       )
-                     )
-                   sequences)
-          partofRefined (filter identity partof)
-          ]
-      ;;contains the current update sequence
-      ;;(println partof)
-      (cond
-        (empty? partofRefined) (do
-                          ;;(println "creating sequence")
-                          (concat
-                           sequences
-                           (basins state rule '() 0)
-                           )
-                          ;;create a new sequence wih state
-                          )
-        (= (count sequences) (count partofRefined)) (do
-                                               ;;(println "adding fixed point")
-                                       (concat
-                                        sequences
-                                        (distinct partofRefined)
-                                        )
-                                       )
-        :else (map
-               (fn [p s]
-                 (cond
-                   (= nil p) s
-                   (= p s) s
-                   :else p
-                   )
-                 )
-               partof sequences) ;;returns the sequence it is a part of
-        )
-      )
-    )
-  )
-
-
-;; need to check if output correct
-(defn sequenceNumbers [states rule sequences]
-
-  ;;(println (first states) sequences)
-  (cond
-    (= nil (first states)) sequences
-    :else (sequenceNumbers (rest states) rule
-                           (checkPartSequence (first states) rule sequences)
-                           )
-                           ;; directly return the sequences
-                           ;; (concat
-                            ;;  sequences)
-
-    )
-
-  )
-
-(defn findSequence [n state rule]
-
-  (let [
-        sequences (sequenceNumbers (comb/selections [0 1] n)
-                                   rule
-                                   '()
-                                   )
-        ]
-    ;;(println sequences)
-    (filter identity
-     (map-indexed
-      (fn [ind seq]
-        (cond
-          (.contains seq state) (str "S" ind " " (reverse (into () seq)))
-          :else nil
-          )
-        )
-      sequences))
-    )
-  )
-
-(defn findClass [state]
-
-  (let [
-        n (count state)
-        classes (expandClassGen (comb/selections [0 1] n))
-        ]
-    (filter identity
-            (map-indexed
-             (fn [ind c]
-               (cond
-                 (.contains c state) (str "C" ind " " (reverse (into () state)))
-                 :else nil
-                 )
-               )
-             classes)
-            )
-    )
-  )
-
-(defn classToSeq [state rule]
-  (let [
-        classId (findClass state)
-        n (count state)
-        seqId (findSequence n state rule)
-        ]
-    (list (first classId) " occurs in " (first seqId) )
-
-    )
-  )
-
-
-(defn characterizeClassSequences [n rule]
-  (let [
-        states (comb/selections [0 1] n)
-        rule (caRule rule)
-        ]
-    ; for every state, get the class and the sequence it belongs to
-    (map
-     (fn [s]
-       (classToSeq s rule)
-       )
-     states)
-    )
   )
