@@ -336,6 +336,8 @@
                                            ;;because fixed points are
                                            ;;always parts of
                                            ;;converging sequences
+                                           ;;and periodic points are stable
+                                           (not (isPeriodic (first s) (first s) rule '() 0))
                                            (longestSubseq newSeq s)
                                            )
                                           newSeq
@@ -364,6 +366,50 @@
     )
   )
 
+(defn goNextN [rule seq newSeq n cnt]
+
+  (cond
+    (> cnt n) nil
+    (longestSubseq seq newSeq) true
+    :else (goNextN
+           rule
+           (concat seq (list (nextState rule (last seq))) )
+           newSeq
+           n
+           (inc cnt)
+           )
+    )
+  )
+
+(defn checkExistingPeriods [sequences newSeq rule]
+  (let [
+        findExistingPeriod
+        (filter identity (map
+         (fn [s]
+           (cond
+             ;;further check if the next sequence is a rotation of this sequence
+             (and
+              (isPeriodic (first s) (first s) rule '() 0)
+              (goNextN
+               rule
+               s newSeq
+               (isPeriodic (first s) (first s) rule '() 0)
+               0
+               )
+              ) s
+             :else nil
+             )
+           )
+         sequences))
+        ]
+    ;;(println findExistingPeriod)
+    (cond
+      (empty? findExistingPeriod) nil
+      :else (first findExistingPeriod)
+      )
+    )
+  )
+
 ;; builds a new sequence
 ;; or returns an existing sequence
 ;; or creates a longer sequence
@@ -376,15 +422,22 @@
     ;; if it is a fixed point
     (isFixed state rule) (concat sequences (list (list state state)))
     ;;periodic point
-    (isPeriodic state state rule '() 0)
-    (do
-      ;;(println "periodic")
-      (concat
-       sequences
-       (list (isPeriodic state state rule '() 0 'periodic))
-       ) ;;returns the period sequence
-
-      )
+     (isPeriodic state state rule '() 0)
+     (do
+       (cond
+         (not (= nil (checkExistingPeriods sequences (isPeriodic state state rule '() 0 'periodic) rule)))
+         (concat
+          sequences
+          (list (checkExistingPeriods sequences (isPeriodic state state rule '() 0 'periodic) rule))
+          )
+         :else  (concat
+                 sequences
+                 (list (isPeriodic state state rule '() 0 'periodic))
+                 )
+         )
+       ;;(println "periodic")
+       ;;returns the period sequence
+       )
 
     ;; ;;transient point
     (isTransient state state rule '() 0)
@@ -409,6 +462,73 @@
 
   )
 
+
+(defn findClass [state]
+
+  (let [
+        n (count state)
+        classes (expandClassGen (comb/selections [0 1] n))
+        ]
+    (filter identity
+            (map-indexed
+             (fn [ind c]
+               (cond
+                 (.contains c state) (str "C" ind " ")
+                 :else nil
+                 )
+               )
+             classes)
+            )
+    )
+  )
+
+
+(defn getClassDescription [sequences]
+  (map
+   (fn [s]
+     (map
+      (fn [state]
+        (findClass state)
+        )
+      s)
+     )
+   sequences)
+  )
+
+;; matches classes and returns identical sequences for sequences that
+;; have members of the same class
+
+;;        classSeq (getClassDescription sequences)
+
+(defn matchasClasses [sequences classSeq newSeq ind]
+
+  (cond
+    (>= ind (count classSeq) ) newSeq
+    :else (let [
+                c1 (nth classSeq ind)
+                seq (nth sequences ind)
+                ]
+            (matchasClasses
+             sequences
+             classSeq
+             (map
+              (fn [cS seq1]
+                ;;(println "here" c1 seq cS seq1)
+                (cond
+                  (= c1 cS) (do
+                              ;;(println c1 cS)
+                              seq) ;;returning the same seq for matching class
+                  :else seq1
+                  )
+                )
+              classSeq newSeq)
+             (+ ind 1)
+             )
+            )
+    )
+
+  )
+
 ;; need to check if output correct
 (defn sequenceNumbers [states rule sequences]
 
@@ -426,6 +546,72 @@
     )
 
   )
+
+(defn findSequenceList [state rule]
+
+  (let [
+        sequences (sequenceNumbers (comb/selections [0 1] (count state))
+                                   rule
+                                   '()
+                                   )
+        charcSeq (filter identity
+                         (map-indexed
+                          (fn [ind seq]
+                            (cond
+                              ;;distinguishing between transient and
+                              ;;fixed points, both occuring in many sequences
+                              (and
+                               (not (isFixed state rule))
+                               (.contains seq state))
+                              seq
+                              (and (isFixed state rule )
+                                   (= state (first seq)) ;;seq is
+                                   ;;twice the fixed point
+                                   )
+                              seq
+                              :else nil
+                              )
+                            )
+                          sequences))
+        ]
+    charcSeq
+    )
+  )
+
+
+
+;;get reduce indices
+(defn getEquivalentIndices [state rule]
+
+  (let [
+        sequences (sequenceNumbers (comb/selections [0 1] (count state))
+                                   rule
+                                   '()
+                                   )
+        ;;sequence descriptions in terms of classes
+        redSeq (distinct (matchasClasses sequences
+                               (getClassDescription sequences)
+                               sequences
+                               0
+                               ))
+        seqList (findSequenceList state rule)
+       ]
+    ;;(println sequences)
+    ;(println redSeq)
+    ;(println (getClassDescription seqList))
+    ;(println (getClassDescription redSeq))
+    (cond
+      (not (= -1 (.indexOf (getClassDescription redSeq) (first (getClassDescription seqList)))))
+      (str "S"
+           (.indexOf (getClassDescription redSeq) (first (getClassDescription seqList)))
+           )
+      :else seq
+      )
+    )
+
+  )
+
+
 
 (defn findSequence [state rule]
 
@@ -467,24 +653,6 @@
     )
   )
 
-(defn findClass [state]
-
-  (let [
-        n (count state)
-        classes (expandClassGen (comb/selections [0 1] n))
-        ]
-    (filter identity
-            (map-indexed
-             (fn [ind c]
-               (cond
-                 (.contains c state) (str "C" ind " ")
-                 :else nil
-                 )
-               )
-             classes)
-            )
-    )
-  )
 
 ;;(reverse (into () state))
 
@@ -492,7 +660,8 @@
   (let [
         classId (findClass state)
         n (count state)
-        seqId (findSequence state rule)
+        seqId (getEquivalentIndices state rule)
+        ;;seqId (findSequence state rule)
         ]
     (list (first classId) " --> " seqId)
     )
@@ -530,8 +699,9 @@
                           )
         classNo (findClass state)
         seqNo (findSequence state rule)
+        eqSeqNo (getEquivalentIndices state rule)
         ]
-    ;;(println "writing")
+    ;; (println "writing")
     ;; (println           (str "|" (join state)
     ;;                         "|" (join (map join caClass) ",")
     ;;                         "|" (join (map join seq) "-->")
@@ -539,7 +709,8 @@
     ;;                         "|" transientNumber
     ;;                         "|" transientNumber
     ;;                         "|" (apply str classNo)
-    ;;                         "|" seqNo
+    ;;                         ;;"|" seqNo
+    ;;                         "|" eqSeqNo
     ;;                         "|\n" ))
     (spit filename
           (str "|" (join state)
@@ -548,7 +719,8 @@
                "|" phase
                "|" transientNumber
                "|" (apply str classNo)
-               "|" seqNo
+               ;;"|" seqNo
+               "|" eqSeqNo
                "\n" )
           :append true
           )
@@ -586,7 +758,7 @@
           :append true
           )
     (spit filename "#+ATTR_LATEX: :align |c|c|c|c|c|\n" :append true)
-    (spit filename "|state|Shift invariant class|Sequence|Phase|Transient|classNo|SeqNo|\n" :append true)
+    (spit filename "|state|Shift invariant class|Sequence|Phase|Transient|classNo|Equivalent Seq No|\n" :append true)
 
     (println "writing" rule " to " filename)
     (doall (map
