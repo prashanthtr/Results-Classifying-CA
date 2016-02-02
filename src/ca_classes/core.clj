@@ -3,6 +3,17 @@
   (:gen-class)
   )
 
+;; needs to be in a separate file
+
+(def join (fn [x & args]
+            (cond
+              (> (count args) 0) (#(clojure.string/join (first args) x))
+              :else (#(clojure.string/join x))
+              )
+            )
+  )
+
+
 ;; rule is an list '(0 0 0 0 0 0 0 0)
 (defn caRule [rule]
   ;;(println "carule" rule)
@@ -59,118 +70,7 @@
   )
 
 
-
-(defn isFixed [initState rule]
-  (cond
-    (= initState (nextState rule initState)) true
-    :else false
-    )
-  )
-
-
-;; part of a periodic rule
-(defn isPeriodic [initState state rule memory cnt & args]
-
-  ;;(println args)
-  ;;(println initState state memory)
-  (cond
-    (>= cnt (Math/pow 2 (count initState))) nil
-    (= (count (distinct memory)) (count memory) ) ;;initially true
-    (isPeriodic
-     initState
-     (nextState rule state)
-     rule
-     (concat memory (list state))
-     (+ cnt 1)
-     (first args)
-     )
-    (< (count (distinct memory)) (count memory))
-    (cond
-      (= (first memory) (last memory)) (cond
-                                         (= (first args) 'periodic)
-                                         (do
-                                           ;;(println "here")
-                                           memory
-                                           )
-                                         :else
-                                         (do
-                                           ;;(println "heresay")
-                                           (- (count memory) 1)
-                                           )
-                                         )
-      :else nil
-      )
-    :else false
-    )
-  )
-
-
-;; takes a memory of an init state, and gives the transient number of
-;; that state
-
-(defn findTransientNumber [memory ind]
-
-  (cond
-    (>= ind (count memory)) nil ;;no period after transient
-    (= (nth memory ind) (last memory)) ind
-    :else (findTransientNumber memory (+ ind 1))
-    )
-
-  )
-
-;; part of a periodic rule
-(defn isTransient [initState state rule memory cnt & args]
-
-  ;;(println initState state memory)
-  (cond
-    (>= cnt (Math/pow 2 (count initState))) nil
-    (= (count (distinct memory)) (count memory) ) ;;initially true
-    (isTransient
-     initState
-     (nextState rule state)
-     rule
-     (concat memory (list state))
-     (+ cnt 1)
-     (first args)
-     )
-    (< (count (distinct memory)) (count memory))
-    (cond
-      (= (first memory) (last memory)) nil ;;not a transient
-      :else (cond
-              (= (first args) 'transient) (do
-                                            ;;(println args)
-                                            memory
-                                            )
-              :else (findTransientNumber memory 0)
-              )
-      )
-    :else false
-    )
-  )
-
-;; part of a sequence
-(defn partSequence [initState state rule memory cnt]
-
-  (cond
-    (>= cnt (Math/pow 2 (count initState))) memory
-    (= (count (distinct memory)) (count memory) ) ;;initially true
-    (partSequence
-     initState
-     (nextState rule state)
-     rule
-     (concat memory (list state))
-     (+ cnt 1))
-    (< (count (distinct memory)) (count memory)) memory ;;cycle
-    :else nil
-    )
-  )
-
-
-
-(defn countOnes [state]
-  (reduce + state)
-  )
-
+;; shifts a sequence to the left by n steps
 (defn sLeft [state n]
   (cond
     (= n 0) state
@@ -191,24 +91,28 @@
     )
   )
 
-;; belongs to a class if it matches one of the members in the class
-;; within n steps
-(defn belongsToClass [state cl]
-  (let [
-        cnt (count state)
-        shifts (range cnt)
-        shiftCheck     (filter identity
-                               (map
-                                (fn [n]
-                                  (cond
-                                    (= (sLeft state n) cl) true
-                                    :else nil
-                                    )
-                                  )
-                                shifts)
-                               )
-        ]
 
+;; short algorithm
+;; input number of cells in the CA
+
+
+;; checks if a state is a memebr of the same class through shift
+;; invariance (another operation is a flip )
+(defn checkMemberClass [state1 state2]
+  (let [
+        cnt (count state1)
+        shifts (range cnt)
+        shiftCheck  (filter identity
+                            (map
+                             (fn [n]
+                               (cond
+                                 (= (sLeft state1 n) state2) true
+                                 :else nil
+                                 )
+                               )
+                             shifts)
+                            )
+        ]
     (cond
       (empty? shiftCheck) nil
       :else true
@@ -216,578 +120,194 @@
     )
   )
 
-
-(defn checkExistingClass [state classList]
-
-  (let [
-        classId (filter identity
-                        (map
-                         (fn [cl]
-                           (belongsToClass state cl)
-                           )
-                         classList))
-        ]
-    (cond
-      (empty? classId) (do
-                         ;;(println "new class created")
-                         (concat classList (list state))
-                         )
-      :else (do
-              ;;(println "belongs to old class")
-              classList
-              )
-      )
-    )
-
-  )
-
-;;generates shift invariant classes based on operational closure of CA
-(defn genClasses [states classes]
-
-  (cond
-    (empty? states) classes
-    :else (genClasses (rest states) (checkExistingClass (first states) classes))
-    )
-  )
-
-(defn expandClassGen [states]
-
-  (let [
-        classes (genClasses states '())
-        ]
-    (map
-     (fn [c]
-       (let [
-             classList '()
-             ]
-         (filter identity
-                 (map
-                  (fn [s]
-                    (cond
-                      (= (belongsToClass s c) true) (concat classList s)
-                      :else nil
-                      )
-                    )
-                  states))
-         )
-       )
-     classes)
-    )
-  )
-
-;; returns the classes that it is member of
-(defn checkClassMember [state]
+(defn findRestClass [state]
 
   (let [
         n (count state)
         states (comb/selections [0 1] n)
-        classes (expandClassGen states)
+        findRestClass (filter identity
+                              (map
+                               (fn [st]
+                                 (cond
+                                   (= true (checkMemberClass state st))
+                                   st
+                                   :else nil
+                                   )
+                                 )
+                               states)
+                              )
         ]
-    ;;(println classes)
-    (first (filter identity (map
-                      (fn [c]
-                        (cond
-                          (= (belongsToClass state (first c)) true) c
-                          :else nil
-                          )
-                        )
-                      classes)))
+    findRestClass
     )
   )
 
 
-(def join (fn [x & args]
-            (cond
-              (> (count args) 0) (#(clojure.string/join (first args) x))
-              :else (#(clojure.string/join x))
-              )
-            )
-  )
+;;returns a shift class given a state
+;; runs through all the states to find a states that belong to the
+;; same class O(2^n)
 
-
-;; we want to se if seq2 is contained in seq1
-(defn longestSubseq [seq1 seq2]
-  ;;(println seq1 seq2)
-  (cond
-    (or
-     (and (empty? seq2) (empty? seq1))
-     (and (empty? seq2) (not (empty? seq1)))
-     ) true
-    (and (empty? seq1) (not (empty? seq2))) nil
-    (= (first seq1) (first seq2))
-    (longestSubseq (rest seq1) (rest seq2) )
-    :else (longestSubseq (rest seq1) seq2)
-    )
-
-  )
-
-(defn replaceSequences [seq newSeq rule]
-
-  (cond
-    (empty? seq) (list newSeq)
-    :else   (let [
-                  needNewSeq (filter identity
-                                     (map
-                                      (fn [s]
-                                        (cond
-                                          (and
-                                           (> (count newSeq)  (count s))
-                                           (not (isFixed (first s) rule))
-                                           ;;because fixed points are
-                                           ;;always parts of
-                                           ;;converging sequences
-                                           ;;and periodic points are stable
-                                           (not (isPeriodic (first s) (first s) rule '() 0))
-                                           (longestSubseq newSeq s)
-                                           )
-                                          newSeq
-                                          :else nil
-                                          )
-                                        )
-                                      seq))
-                  ]
-              (cond
-                (empty? needNewSeq) (concat seq (list newSeq)) ;;not
-                ;;in list
-                ;;in list but need a longer subseq
-                :else (map
-                       (fn [s]
-                         (cond
-                           (and
-                            (> (count newSeq)  (count s))
-                            (longestSubseq newSeq s)
-                            ) newSeq
-                           :else s
-                           )
-                         )
-                       seq)
-                )
-              )
-    )
-  )
-
-(defn goNextN [rule seq newSeq n cnt]
-
-  (cond
-    (> cnt n) nil
-    (longestSubseq seq newSeq) true
-    :else (goNextN
-           rule
-           (concat seq (list (nextState rule (last seq))) )
-           newSeq
-           n
-           (inc cnt)
-           )
-    )
-  )
-
-(defn checkExistingPeriods [sequences newSeq rule]
+(defn findShiftClass [state]
   (let [
-        findExistingPeriod
-        (filter identity (map
-         (fn [s]
-           (cond
-             ;;further check if the next sequence is a rotation of this sequence
-             (and
-              (isPeriodic (first s) (first s) rule '() 0)
-              (goNextN
-               rule
-               s newSeq
-               (isPeriodic (first s) (first s) rule '() 0)
-               0
-               )
-              ) s
-             :else nil
-             )
-           )
-         sequences))
+        shiftClass (findRestClass state)
         ]
-    ;;(println findExistingPeriod)
-    (cond
-      (empty? findExistingPeriod) nil
-      :else (first findExistingPeriod)
-      )
+    shiftClass
     )
   )
 
-;; builds a new sequence
-;; or returns an existing sequence
-;; or creates a longer sequence
-;; or creates a new sequence and adds it
 
-(defn buildSequences [state rule sequences]
+;; check if its a fixed point
+(defn isFixed [initState rule]
+  (cond
+    (= initState (nextState rule initState)) true
+    :else false
+    )
+  )
+
+
+;; knows the memory has one cycle, finds the shortest cycle in the
+;; memory
+;;working: '( (0 1 1) ( 0 1 0) (1 0 0) (0 1 1) )
+;;wornt work test case: '( (0 1 1) ( 0 1 0) (1 0 0) (0 1 1) (1 1 1) )
+(defn findPeriodNumber [memory st end]
 
   (cond
+    (>= st end) nil ;;no period
+    (= (nth memory st) (nth memory end)) (- end st)
+    :else (findPeriodNumber memory (inc st) (dec end))
+    )
 
-    ;; if it is a fixed point
-    (isFixed state rule) (concat sequences (list (list state state)))
-    ;;periodic point
-     (isPeriodic state state rule '() 0)
-     (do
-       (cond
-         (not (= nil (checkExistingPeriods sequences (isPeriodic state state rule '() 0 'periodic) rule)))
-         (concat
-          sequences
-          (list (checkExistingPeriods sequences (isPeriodic state state rule '() 0 'periodic) rule))
-          )
-         :else  (concat
-                 sequences
-                 (list (isPeriodic state state rule '() 0 'periodic))
-                 )
-         )
-       ;;(println "periodic")
-       ;;returns the period sequence
-       )
+  )
 
-    ;; ;;transient point
-    (isTransient state state rule '() 0)
-    ;;replaces only the transient sequences
-    (replaceSequences
-     sequences
-     (isTransient state state rule '() 0 'transient)
+;; knows that memory has one cycle and finds the shortest number of
+;; steps to the beginning of the cycle
+(defn findTransientNumber [memory ind]
+
+  (cond
+    (>= ind (count memory)) nil ;;no period after transient
+    (= (nth memory ind) (last memory)) ind ;;picking the lower of 2
+    :else (findTransientNumber memory (+ ind 1))
+    )
+  )
+
+;; Check and return a true or false if the state is periodic or
+;; transient and return the sequence
+;; transient - part of a fixed point or a period
+;; Returns an orbit object with two parameters:
+;; { 'fixed (sequence) 'periodic number/nil 'transient number/nil  };;
+(defn findOrbit [initState state rule memory cnt]
+
+  ;;(println memory)
+  (cond
+    (>= cnt (Math/pow 2 (count initState))) nil ;;max no of steps
+    (= (count (distinct memory)) (count memory) )
+    ;; even for a fixed point there will be a cycle with period 1
+    ;;no cycle, repeat till there is a cycle
+    (findOrbit
+     initState
+     (nextState rule state)
      rule
+     (concat memory (list state))
+     (+ cnt 1)
      )
-
-    ;; ;;replace with a longer sequence
-    ;; (do
-    ;;   ;;(println "transient")
-    ;;   (replaceSequences
-    ;;    sequences
-    ;;    (isTransient state state rule '() 0 'transient)
-    ;;    )
-    ;;   )
-
-    :else nil ;;there is no point like that
+    (< (count (distinct memory)) (count memory) )
+    ;;cycle
+    {
+     'state initState
+     'transient (findTransientNumber memory 0),
+     'sequence memory,
+     'periodic (findPeriodNumber memory 0 (dec (count memory)))
+     }
+    :else false
     )
-
   )
 
+;; characterizes a state given a rule
+;; for every state in 2^n states,
+;; characterize:
+;; find its shift invariant classes
+;; check if it is a fixed, periodic, transient
+;; get the period number,
+;; transient number,
+;; states of the sequence that it is a part of
+;; length of the longest sequence
+;; Later: classes of the sequence it is a part of
+;; output the result
 
-(defn findClass [state]
+(defn characterize [state rule]
 
   (let [
-        n (count state)
-        classes (expandClassGen (comb/selections [0 1] n))
+        shiftClass (findShiftClass state) ;; 2^n
+        orbitObj (findOrbit state state rule '() 0) ;;2^n
         ]
-    (filter identity
-            (map-indexed
-             (fn [ind c]
-               (cond
-                 (.contains c state) (str "C" ind " ")
-                 :else nil
-                 )
-               )
-             classes)
-            )
+    (merge orbitObj {'class shiftClass})
     )
   )
 
+;;gets an object and prints it as per org table
+(defn printOrgTable [filename objects n rule]
 
-(defn getClassDescription [sequences]
-  (map
-   (fn [s]
-     (map
-      (fn [state]
-        (findClass state)
+  (spit filename "\n\n" :append true)
+  (spit filename
+        (str "#+TABLE: Characterization of a " n " cell CA with Rule " (join rule) "\n")
+        :append true
         )
-      s)
-     )
-   sequences)
-  )
-
-;; matches classes and returns identical sequences for sequences that
-;; have members of the same class
-
-;;        classSeq (getClassDescription sequences)
-
-(defn matchasClasses [sequences classSeq newSeq ind]
-
-  (cond
-    (>= ind (count classSeq) ) newSeq
-    :else (let [
-                c1 (nth classSeq ind)
-                seq (nth sequences ind)
-                ]
-            (matchasClasses
-             sequences
-             classSeq
-             (map
-              (fn [cS seq1]
-                ;;(println "here" c1 seq cS seq1)
-                (cond
-                  (= c1 cS) (do
-                              ;;(println c1 cS)
-                              seq) ;;returning the same seq for matching class
-                  :else seq1
-                  )
-                )
-              classSeq newSeq)
-             (+ ind 1)
-             )
+  (spit filename "#+ATTR_LATEX: :align |c|c|c|c|c|\n" :append true)
+  (spit filename "|state|Shift invariant class|Sequence|Phase|Transient|\n" :append true)
+  ;;(println "writing")
+  ( doall
+   (map
+    (fn [obj]
+      (spit filename
+            (str "|" (join (get obj 'state ) )
+                 "|" (join (map join (get obj 'shiftClass)) ",")
+                 "|" (join (map join (get obj 'sequence)) "-->")
+                 "|" (get obj 'periodic)
+                 "|" (get obj 'transient)
+                 "\n" )
+            :append true
             )
-    )
-
-  )
-
-;; need to check if output correct
-(defn sequenceNumbers [states rule sequences]
-
-  ;;(println (first states) sequences)
-  (cond
-    (= nil (first states)) sequences
-    :else (sequenceNumbers (rest states) rule
-                           (buildSequences (first states) rule sequences)
-                           )
-    ;;checkPartSequence
-                           ;; directly return the sequences
-                           ;; (concat
-                            ;;  sequences)
-
-    )
-
-  )
-
-(defn findSequenceList [state rule]
-
-  (let [
-        sequences (sequenceNumbers (comb/selections [0 1] (count state))
-                                   rule
-                                   '()
-                                   )
-        charcSeq (filter identity
-                         (map-indexed
-                          (fn [ind seq]
-                            (cond
-                              ;;distinguishing between transient and
-                              ;;fixed points, both occuring in many sequences
-                              (and
-                               (not (isFixed state rule))
-                               (.contains seq state))
-                              seq
-                              (and (isFixed state rule )
-                                   (= state (first seq)) ;;seq is
-                                   ;;twice the fixed point
-                                   )
-                              seq
-                              :else nil
-                              )
-                            )
-                          sequences))
-        ]
-    charcSeq
-    )
-  )
-
-
-
-;;get reduce indices
-(defn getEquivalentIndices [state rule]
-
-  (let [
-        sequences (sequenceNumbers (comb/selections [0 1] (count state))
-                                   rule
-                                   '()
-                                   )
-        ;;sequence descriptions in terms of classes
-        redSeq (distinct (matchasClasses sequences
-                               (getClassDescription sequences)
-                               sequences
-                               0
-                               ))
-        seqList (findSequenceList state rule)
-       ]
-    ;;(println sequences)
-    ;(println redSeq)
-    ;(println (getClassDescription seqList))
-    ;(println (getClassDescription redSeq))
-    (cond
-      (not (= -1 (.indexOf (getClassDescription redSeq) (first (getClassDescription seqList)))))
-      (str "S"
-           (.indexOf (getClassDescription redSeq) (first (getClassDescription seqList)))
-           )
-      :else seq
       )
-    )
-
+    objects)
+   )
   )
 
-
-
-(defn findSequence [state rule]
-
+(defn genOrgTables [n rule states filename]
   (let [
-        sequences (sequenceNumbers (comb/selections [0 1] (count state))
-                                   rule
-                                   '()
-                                   )
-        charcSeq (filter identity
-                         (map-indexed
-                          (fn [ind seq]
-                            (cond
-                              ;;distinguishing between transient and
-                              ;;fixed points, both occuring in many sequences
-                              (and
-                               (not (isFixed state rule))
-                               (.contains seq state))
-                              (str "S" ind)
-                              (and (isFixed state rule )
-                                   (= state (first seq)) ;;seq is
-                                   ;;twice the fixed point
-                                   )
-                              (str "S" ind)
-                              :else nil
-                              )
-                            )
-                          sequences))
-        ]
-    ;;(str "S" ind " " (reverse (into () seq)))
-    ;;(println charcSeq)
-    (cond
-      (empty? charcSeq) nil
-      (= (count charcSeq) 1) (first charcSeq)  ;; converging sequence
-      ;;(isFixed state rule) (first charcSeq)
-      :else (join charcSeq ",")
-      )
-    ;;(println sequences)
-
-    )
-  )
-
-
-;;(reverse (into () state))
-
-(defn classToSeq [state rule]
-  (let [
-        classId (findClass state)
-        n (count state)
-        seqId (getEquivalentIndices state rule)
-        ;;seqId (findSequence state rule)
-        ]
-    (list (first classId) " --> " seqId)
-    )
-  )
-
-;; (defn characterizeClassSequences [n rule]
-;;   (let [
-;;         states (comb/selections [0 1] n)
-;;         rule (caRule rule)
-;;         ]
-;;     ; for every state, get the class and the sequence it belongs to
-;;     (map
-;;      (fn [s]
-;;        (join (classToSeq s rule) " ")
-;;        )
-;;      states)
-;;     )
-;;   )
-
-;; generates the table output form
-(defn characterizeState [state rule filename]
-  ;;(println "characterizing")
-  (let [
-        caClass (checkClassMember state)
-        seq (partSequence state state rule '() 0)
-        trNo (isTransient state state rule '() 0)
-        phNo (isPeriodic state state rule '() 0)
-        phase (cond
-                (= nil phNo) "nil"
-                :else phNo
-                )
-        transientNumber (cond
-                          (= nil trNo) "nil"
-                          :else trNo
-                          )
-        classNo (findClass state)
-        seqNo (findSequence state rule)
-        eqSeqNo (getEquivalentIndices state rule)
-        ]
-    ;; (println "writing")
-    ;; (println           (str "|" (join state)
-    ;;                         "|" (join (map join caClass) ",")
-    ;;                         "|" (join (map join seq) "-->")
-    ;;                         "|" phase
-    ;;                         "|" transientNumber
-    ;;                         "|" transientNumber
-    ;;                         "|" (apply str classNo)
-    ;;                         ;;"|" seqNo
-    ;;                         "|" eqSeqNo
-    ;;                         "|\n" ))
-    (spit filename
-          (str "|" (join state)
-               "|" (join (map join caClass) ",")
-               "|" (join (map join seq) "-->")
-               "|" phase
-               "|" transientNumber
-               "|" (apply str classNo)
-               ;;"|" seqNo
-               "|" eqSeqNo
-               "\n" )
-          :append true
-          )
-    true
-    )
-  )
-
-(defn getIntRep [string]
-  (let [
-        arsplit  (#(clojure.string/split string #""))
-        intRule (map (fn [s]
-                       ;;(println s)
-                       (Integer. s)
-                       )
-                     arsplit)
-        ]
-    ;;(println intRule)
-    intRule
-    )
-  )
-
-;; n -> number
-;; rule -> wolfram representation of rule
-;; output characterization of all states
-(defn tableGen [n rule]
-  (let [
-        filename (str n "cellCARule.org")
-        states (comb/selections [0 1] n)
-        ;;rule (getIntRep rule)
         carule (caRule rule)
         ]
-    (spit filename "\n\n" :append true)
-    (spit filename
-          (str "#+TABLE: Characterization of a " n " cell CA with Rule " (join rule) "\n")
-          :append true
-          )
-    (spit filename "#+ATTR_LATEX: :align |c|c|c|c|c|\n" :append true)
-    (spit filename "|state|Shift invariant class|Sequence|Phase|Transient|classNo|Equivalent Seq No|\n" :append true)
-
-    (println "writing" rule " to " filename)
-    (doall (map
-         (fn [s]
-           ;;(println "mapping" s)
-           (characterizeState s carule filename)
-           )
-         states))
-    (println "done writing" rule " to " filename)
+    (println "Begin to write" rule " to" filename)
+    (printOrgTable
+     filename
+     (map
+      (fn [state]
+        ;;leave gap and print table
+        (characterize state carule)
+        )
+      states)
+     n
+     rule
+     )
+    (println "Finished writing" rule " to" filename)
     )
   )
 
-(defn nCellRule [n rule]
-  (tableGen n rule)
-  )
+;;shift classes apply for a state
+;; orbit aplies fora state
+;; basins of attraction apply for a attractor state or a periodic state ?
+;; legnth of the basin applyies for an attractor state or a periodic state?
+
 
 (defn -main [nCell]
-
   (let [
-        nC (#(Integer/parseInt nCell))
-        ;;nR (#(Integer/parseInt nRule))
+        n (#(Integer/parseInt nCell))
+        states (comb/selections [0 1] n) ;;only geenrated once, first 2^n
         rules (comb/selections [0 1] 8)
+        filename (str n "cellCARule.org")
         ]
-    ;;for each rule, each cell generate tables
-    (doall
-     (map
-     (fn [r]
-       (nCellRule nC r)
+    (map
+     (fn [rule]
+       (genOrgTables n rule states filename)
        )
-     rules))
+     rules)
     )
   )
