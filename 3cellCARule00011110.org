@@ -1,0 +1,13 @@
+
+
+#+TABLE: Characterization of a 3 cell CA with Rule 00011110
+#+ATTR_LATEX: :align |c|c|c|c|c|
+| state | Shift invariant class | Sequence Id | Phase | Transient |
+|   000 | 000                   | S0          |     1 |         0 |
+|   001 | 001,010,100           | S0          |       |         2 |
+|   010 | 001,010,100           | S0          |       |         2 |
+|   011 | 011,101,110           | S0          |       |         3 |
+|   100 | 001,010,100           | S0          |       |         2 |
+|   101 | 011,101,110           | S0          |       |         3 |
+|   110 | 011,101,110           | S0          |       |         3 |
+|   111 | 111                   | S0          |       |         1 |

@@ -233,81 +233,239 @@
 ;; Later: classes of the sequence it is a part of
 ;; output the result
 
-(defn characterize [state rule]
+(defn characterize [ind state rule]
 
   (let [
         shiftClass (findShiftClass state) ;; 2^n
         orbitObj (findOrbit state state rule '() 0) ;;2^n
         ]
-    (merge orbitObj {'class shiftClass})
+    ;;(println {'class shiftClass})
+    (merge orbitObj {'class shiftClass 'seqId ind} )
     )
   )
 
 ;;gets an object and prints it as per org table
-(defn printOrgTable [filename objects n rule]
+(defn printOrgTable [filename obj n rule]
 
-  (spit filename "\n\n" :append true)
+  (println (join (get obj 'state )) )
   (spit filename
-        (str "#+TABLE: Characterization of a " n " cell CA with Rule " (join rule) "\n")
+        (str "|" (join (get obj 'state ) )
+             "|" (join (map join (get obj 'class)) ",")
+             ;;"|" (join (map join (get obj 'sequence)) "-->")
+             "|" (str "S" (get obj 'seqId))
+             "|" (get obj 'periodic)
+             "|" (get obj 'transient)
+             "|\n" )
         :append true
         )
-  (spit filename "#+ATTR_LATEX: :align |c|c|c|c|c|\n" :append true)
-  (spit filename "|state|Shift invariant class|Sequence|Phase|Transient|\n" :append true)
-  ;;(println "writing")
-  ( doall
-   (map
-    (fn [obj]
-      (spit filename
-            (str "|" (join (get obj 'state ) )
-                 "|" (join (map join (get obj 'shiftClass)) ",")
-                 "|" (join (map join (get obj 'sequence)) "-->")
-                 "|" (get obj 'periodic)
-                 "|" (get obj 'transient)
-                 "\n" )
-            :append true
-            )
-      )
-    objects)
-   )
   )
 
-(defn genOrgTables [n rule states filename]
-  (let [
-        carule (caRule rule)
-        ]
-    (println "Begin to write" rule " to" filename)
-    (printOrgTable
-     filename
-     (map
-      (fn [state]
-        ;;leave gap and print table
-        (characterize state carule)
-        )
-      states)
-     n
-     rule
-     )
-    (println "Finished writing" rule " to" filename)
+(defn genNterms [n1 n2 state rule mem]
+  (cond
+    (> n1 n2) mem
+    :else (genNterms
+           (+ n1 1)
+           n2
+           (nextState rule state)
+           rule
+           (concat mem (list state) )
+           )
     )
   )
 
-;;shift classes apply for a state
+
+;; returns true if two sequences of same length are equal by a shift
+;; that is less than n cells
+
+;; (1 0 1 0 1) (0 1 0 1) (1 0 1) (0 0 1 0 1)
+
+(defn eqRotation [seq1 seq2]
+  nil
+  )
+
+(defn eqPeriods [refSeq tarSeq rule]
+
+  (let [
+        cnt (count refSeq) ;;get the number of cells
+        maxLength (Math/pow 2 cnt)
+        genRefSeq (genNterms 0 maxLength refSeq rule '())
+        genTarSeq (genNterms 0 maxLength tarSeq rule '())
+        eqSeq (filter identity
+                      (map
+                       (fn [state]
+                         (let [
+                               seqFromRef (genNterms 0 maxLength state rule '())
+                               ]
+                           (cond
+                             (= seqFromRef genTarSeq) true
+                             :else nil
+                             )
+                           )
+                         )
+                       genRefSeq)
+                      )
+        ]
+    ;;(println genRefSeq)
+    (cond
+      (empty? eqSeq) nil
+      :else true
+      )
+    )
+  )
+
+(defn getNRange [seq n1 n2]
+
+  (reverse (into '() (subvec (into [] seq) n1 n2)))
+
+  )
+
+;; indexes sequences
+;; indexes sequences that are transients of the same fixed point
+;; if they are spatial shifts of the same periodic sequence
+
+;; for every sequence, go through and identify all sequences that are
+;; the same (either belong to same fixed point or to same period)
+;; both of them are fixed points, then don't label
+;; one is fixed, other is transient, check if transient converges to
+;; fixed, with the reverse
+
+;; one is transient and other is periodic, check if it converges to
+;; period
+;; both are transient, check if they converge to same fixed
+;; point/period
+
+                 ;; (or
+                 ;;  (and (not= (get refObj 'transient) 0)
+                 ;;       (= (get chObj 'periodic) 1))
+                 ;;  )
+
+(defn indexSequences [n objects rule]
+
+    (cond
+      (>= n (count objects)) objects
+      :else
+      (let [
+            refObj (nth objects n)
+            ]
+        (indexSequences
+         (+ n 1)
+         ;;indexed objects
+         (map-indexed
+          (fn [ind chObj]
+            ;;(println refObj)
+            (cond
+              (= (get refObj 'state) (get chObj 'state) ) chObj
+              :else
+              (cond
+                ;; fixed Point + transient and vice versa converge to a fixed point
+                (and (= (get refObj 'periodic) 1)
+                     (> (get chObj 'transient) 0)
+                     (= (last (get refObj 'sequence))
+                        (last (get chObj 'sequence))
+                        )
+                     )
+                (merge chObj
+                       {'seqId (get refObj 'seqId)}
+                       )
+
+                ;;return old index
+                ;; both fo them are periodic points, then rotations are
+                ;; equal are not.
+                (and (not= (get refObj 'periodic) nil)
+                     (not= (get chObj 'periodic) nil)
+                     (<= (get refObj 'seqId) (get chObj 'seqId)  )
+                     (eqPeriods
+                      (get refObj 'state) (get chObj 'state)
+                      rule
+                      )
+                     )
+                (merge chObj
+                       {'seqId (get refObj 'seqId)}
+                       )
+                ;;
+                (and (not= (get refObj 'periodic) nil)
+                     (not= (get chObj 'transient) 0)
+                     (<= (get refObj 'seqId) (get chObj 'seqId))
+                     (eqPeriods
+                      (get refObj 'state)
+                      (first (getNRange
+                       (get chObj 'sequence)
+                       (get chObj 'transient)
+                       (count (get chObj 'state))
+                       ))
+                      rule
+                      )
+                     )
+                (merge chObj
+                       {'seqId (get refObj 'seqId)}
+                       )
+
+                :else chObj
+                )
+              )
+            )
+          objects)
+         rule
+         )
+        )
+      )
+  )
+
+(defn genOrgTables [rule states]
+  (let [
+        carule (caRule rule)
+        ]
+    (map-indexed
+     (fn [ind state]
+       ;;leave gap and print table
+       (characterize ind state carule)
+       )
+     states)
+    )
+  )
+
+
+  ;;shift classes apply for a state
 ;; orbit aplies fora state
 ;; basins of attraction apply for a attractor state or a periodic state ?
 ;; legnth of the basin applyies for an attractor state or a periodic state?
 
 
-(defn -main [nCell]
+(defn -main [nCell rule]
   (let [
         n (#(Integer/parseInt nCell))
         states (comb/selections [0 1] n) ;;only geenrated once, first 2^n
-        rules (comb/selections [0 1] 8)
-        filename (str n "cellCARule.org")
+        ;;rules (comb/selections [0 1] 8)
+        ruleList (doall (map (fn [x]
+                               (#(Integer/parseInt x))
+                               )
+                             (clojure.string/split rule #"")
+                             ))
+        filename (str n "cellCARule" rule ".org")
+        tableData (genOrgTables ruleList states)
+        tableData (indexSequences 0 tableData (caRule ruleList))
         ]
-    (map
-     (fn [rule]
-       (genOrgTables n rule states filename)
-       )
-     rules)
+
+    (println "Begin writing" rule " to" filename)
+    (spit filename "\n\n" :append true)
+    (spit filename
+          (str "#+TABLE: Characterization of a " n " cell CA with Rule " (join rule) "\n")
+          :append true
+          )
+    (spit filename "#+ATTR_LATEX: :align |c|c|c|c|c|\n" :append true)
+    (spit filename "|state|Shift invariant class|Sequence Id|Phase|Transient|\n" :append true)
+    (doall (map
+            (fn [stateTable]
+              ;;leave gap and print table
+              (printOrgTable
+               filename
+               stateTable
+               n
+               rule
+               )
+              )
+            tableData))
+    (println "Finished writing" rule " to" filename)
+
     )
   )
